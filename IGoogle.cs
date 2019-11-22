@@ -1,4 +1,4 @@
-﻿// Web automation abstract class
+﻿// Web automation abstract class - Selenium Chrome
 // David Piao
 
 using OpenQA.Selenium;
@@ -7,6 +7,7 @@ using OpenQA.Selenium.Interactions;
 using OpenQA.Selenium.Interactions.Internal;
 using OpenQA.Selenium.Remote;
 using OpenQA.Selenium.Support.UI;
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -22,7 +23,6 @@ using System.Threading.Tasks;
 using System.Windows;
 using Cookie = System.Net.Cookie;
 using Size = System.Drawing.Size;
-using PCKLIB;
 using System.Net.Http;
 using Microsoft.Win32;
 
@@ -31,20 +31,22 @@ namespace PCKLIB
     public class IGoogle
     {
         public object m_locker = new object();
-        public int m_ID;
+
+        public int m_ID;    
         public Guid m_guid;
+
         public object m_chr_data_dir = new object();
-        public object m_selen_locker = new object();
         public string m_chr_user_data_dir = "";
         public string m_chr_extension_dir = Environment.CurrentDirectory + "\\ChromeExtension";
-        public string m_creat_time;
-        public ChromeDriver Driver;
+
+        public ChromeDriver browser;
         public IJavaScriptExecutor m_js;
         public CookieContainer m_cookies;
         public ProxyData m_proxy;
-        public bool m_screenshot;
+
         public System.Drawing.Point m_location = new System.Drawing.Point(0, 0);
         public System.Drawing.Size m_size = new System.Drawing.Size(0, 0);
+
         public IEnumerable<int> PID = null;
 
         public string m_err_str = "##$$##$$";
@@ -52,7 +54,8 @@ namespace PCKLIB
         public bool m_dis_webrtc = false;
         public bool m_dis_cache = false;
         public bool m_dis_js = false;
-        public void DeleteCurrentChromeData()
+        public bool m_headless = false;
+        public void delete_current_chrome_data()
         {
             try
             {
@@ -65,13 +68,13 @@ namespace PCKLIB
             }
         }
 
-        public async Task<bool> Navigate(string target)
+        public async Task<bool> navigate(string target)
         {
             try
             {
-                string url = Driver.Url;
-                Driver.Navigate().GoToUrl(target);
-                return await WaitUrlChange(url);
+                string url = browser.Url;
+                browser.Navigate().GoToUrl(target);
+                return await wait_url_change(url);
             }
             catch (Exception ex)
             {
@@ -79,13 +82,13 @@ namespace PCKLIB
             }
         }
 
-        public async Task<bool> NavigateBack()
+        public async Task<bool> navigate_back()
         {
             try
             {
-                string url = Driver.Url;
+                string url = browser.Url;
                 m_js.ExecuteScript("window.history.go(-1)");
-                return await WaitUrlChange(url);
+                return await wait_url_change(url);
             }
             catch (Exception ex)
             {
@@ -109,7 +112,7 @@ namespace PCKLIB
                 m_js.ExecuteScript(String.Format(newTabScript, tabUrl));
             }
         }
-        public async Task<bool> Start()
+        public async Task<bool> start()
         {
             try
             {
@@ -140,6 +143,9 @@ namespace PCKLIB
                         proxy.SocksPassword = m_proxy.password;
                         chromeOptions.Proxy = proxy;
                     }
+
+                    if (m_headless)
+                        chromeOptions.AddArgument("--headless");
                     chromeOptions.AddArgument("--start-maximized");
                     //chromeOptions.AddArgument("--auth-server-whitelist");
                     chromeOptions.AddArgument("--ignore-certificate-errors");
@@ -156,7 +162,7 @@ namespace PCKLIB
 
                     if (m_dis_js)
                         chromeOptions.AddArgument("--load-extension=" + m_chr_extension_dir + "\\jsoff-master");
-                    string randomUserAgent = GetRandomUserAgent();
+                    string randomUserAgent = get_random_agent();
                     chromeOptions.AddArgument(string.Format("--user-agent={0}", (object)randomUserAgent));
                     chromeOptions.SetLoggingPreference(LogType.Driver, LogLevel.All);
                     chromeOptions.AddAdditionalCapability("useAutomationExtension", false);
@@ -194,17 +200,17 @@ namespace PCKLIB
 
                     try
                     {
-                        Driver = new ChromeDriver(defaultService, chromeOptions);
+                        browser = new ChromeDriver(defaultService, chromeOptions);
                     }
                     catch (Exception ex)
                     {
                         System.Diagnostics.Debug.WriteLine($"#{m_ID} - Fail to start chrome.exe. Please make sure any other chrome windows are not opened.");
                         return false;
                     }
-                    Driver.Manage().Window.Size = m_size;
-                    Driver.Manage().Window.Position = m_location;
+                    browser.Manage().Window.Size = m_size;
+                    browser.Manage().Window.Position = m_location;
 
-                    m_js = (IJavaScriptExecutor)Driver;
+                    m_js = (IJavaScriptExecutor)browser;
                     //if(m_dis_cache)
                     //{
                     //    await Navigate("chrome-extension://kkmknnnjliniefekpicbaaobdnjjikfp/options.html");
@@ -249,7 +255,7 @@ namespace PCKLIB
                     System.Diagnostics.Debug.WriteLine($"#{m_ID} - Failed to start. Exception:{ex.Message}\n{ex.StackTrace}");
                     try
                     {
-                        Driver.Quit();
+                        browser.Quit();
                     }
                     catch
                     {
@@ -269,7 +275,7 @@ namespace PCKLIB
         {
             try
             {
-                Driver.Manage().Cookies.DeleteAllCookies();
+                browser.Manage().Cookies.DeleteAllCookies();
                 return true;
             }
             catch (Exception ex)
@@ -278,7 +284,7 @@ namespace PCKLIB
             }
             return false;
         }
-        public async Task<bool> WaitUrlChange(string url, int timeout = 7000)
+        public async Task<bool> wait_url_change(string url, int timeout = 7000)
         {
             try
             {
@@ -286,9 +292,9 @@ namespace PCKLIB
                 wt.Start();
                 while (wt.ElapsedMilliseconds < timeout)
                 {
-                    if (Driver.Url != url)
+                    if (browser.Url != url)
                         return true;
-                    await TaskDelay(100);
+                    await delay(100);
                 }
             }
             catch (Exception ex)
@@ -298,21 +304,21 @@ namespace PCKLIB
             return false;
         }
 
-        public async Task<bool> TrySelect(By list, By optionToVerify, string textToSelect, int timeout = 5000)
+        public async Task<bool> try_select(By list, By optionToVerify, string textToSelect, int timeout = 5000)
         {
             Stopwatch wt = new Stopwatch();
             wt.Start();
             while (wt.ElapsedMilliseconds < timeout)
             {
-                if (Driver.FindElement(optionToVerify).Text == textToSelect)
+                if (browser.FindElement(optionToVerify).Text == textToSelect)
                     return true;
-                Driver.FindElement(list).SendKeys(textToSelect[0].ToString());
-                await TaskDelay(100);
+                browser.FindElement(list).SendKeys(textToSelect[0].ToString());
+                await delay(100);
             }
             return false;
         }
 
-        public CookieContainer ConvertSeleniumCookieToCookieContainer(ICookieJar seleniumCookie)
+        public CookieContainer convert_selenium_cookie_to_container(ICookieJar seleniumCookie)
         {
             CookieContainer cookieContainer = new CookieContainer();
             using (IEnumerator<OpenQA.Selenium.Cookie> enumerator = seleniumCookie.AllCookies.GetEnumerator())
@@ -326,11 +332,11 @@ namespace PCKLIB
             return cookieContainer;
         }
 
-        public bool IsElementPresent(By by)
+        public bool is_element_present(By by)
         {
             try
             {
-                Driver.FindElement(by);
+                browser.FindElement(by);
                 return true;
             }
             catch (NoSuchElementException ex)
@@ -339,28 +345,28 @@ namespace PCKLIB
             }
         }
 
-        public async Task<bool> WaitToVisible(string xpath, int TimeOut = 1000)
+        public async Task<bool> wait_visible(string xpath, int TimeOut = 1000)
         {
-            return await WaitToVisible(By.XPath(xpath), TimeOut);
+            return await wait_visible(By.XPath(xpath), TimeOut);
         }
-        public async Task<bool> WaitToVisible(By by, int TimeOut = 1000)
+        public async Task<bool> wait_visible(By by, int TimeOut = 1000)
         {
             Stopwatch wt = new Stopwatch();
             wt.Start();
             while (wt.ElapsedMilliseconds < TimeOut)
             {
-                if (await IsElementVisible(by))
+                if (await is_element_visible(by))
                     return true;
                 Thread.Sleep(100);
             }
             return false;
         }
 
-        public async Task<bool> WaitToUnvisable(string xpath, int TimeOut = 1000)
+        public async Task<bool> wait_unvisible(string xpath, int TimeOut = 1000)
         {
-            return await WaitToUnvisable(By.XPath(xpath), TimeOut);
+            return await wait_unvisible(By.XPath(xpath), TimeOut);
         }
-        public async Task<bool> WaitToUnvisable(By by, int TimeOut = 1000)
+        public async Task<bool> wait_unvisible(By by, int TimeOut = 1000)
         {
             Stopwatch wt = new Stopwatch();
             wt.Start();
@@ -368,14 +374,14 @@ namespace PCKLIB
             {
                 try
                 {
-                    if (!await IsElementVisible(by))
+                    if (!await is_element_visible(by))
                         return true;
                 }
                 catch
                 {
                     return false;
                 }
-                await TaskDelay(100);
+                await delay(100);
             }
             return false;
         }
@@ -410,11 +416,11 @@ namespace PCKLIB
                     node = m_js.ExecuteScript(script);
                     if (node != null)
                     {
-                        await TaskDelay(1000);
+                        await delay(1000);
                         return true;
                     }
                     int part = (new Random()).Next(1, 3) * 100;
-                    await TaskDelay(part);
+                    await delay(part);
                     time += part;
                 }
                 return false;
@@ -424,17 +430,17 @@ namespace PCKLIB
                 return false;
             }
         }
-        public async Task<bool> WaitToPresent(string xpath, int TimeOut = 800)
+        public async Task<bool> wait_present(string xpath, int TimeOut = 800)
         {
-            return await WaitToPresent(By.XPath(xpath), TimeOut);
+            return await wait_present(By.XPath(xpath), TimeOut);
         }
-        public async Task<bool> WaitToPresent(By by, int TimeOut = 5000)
+        public async Task<bool> wait_present(By by, int TimeOut = 5000)
         {
             Stopwatch wt = new Stopwatch();
             wt.Start();
             do
             {
-                if (IsElementPresent(by))
+                if (is_element_present(by))
                     return true;
                 await Task.Delay(100);
             }
@@ -442,7 +448,7 @@ namespace PCKLIB
             return false;
         }
 
-        public async Task<bool> WaitAttributeChange(string xpath, string attribute, string value, int TimeOut = 5000)
+        public async Task<bool> wait_attr_change(string xpath, string attribute, string rex, int TimeOut = 5000)
         {
             try
             {
@@ -450,8 +456,8 @@ namespace PCKLIB
                 wt.Start();
                 do
                 {
-                    string val = Driver.FindElementByXPath(xpath).GetAttribute(attribute);
-                    if (val == value)
+                    string val = browser.FindElementByXPath(xpath).GetAttribute(attribute);
+                    if (Regex.IsMatch(val, rex))
                         return true;
                     await Task.Delay(100);
                 }
@@ -465,30 +471,7 @@ namespace PCKLIB
             return false;
         }
 
-        public async Task<bool> WaitAttributeChange_contain(string xpath, string attribute, string value, int TimeOut = 5000)
-        {
-            try
-            {
-                Stopwatch wt = new Stopwatch();
-                wt.Start();
-                do
-                {
-                    string val = Driver.FindElementByXPath(xpath).GetAttribute(attribute);
-                    if (val.Contains(value))
-                        return true;
-                    await Task.Delay(100);
-                }
-                while (wt.ElapsedMilliseconds < TimeOut);
-                return false;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine(ex.Message);
-            }
-            return false;
-        }
-
-        public async Task<By> WaitToPresent(List<By> by, int TimeOut = 1000)
+        public async Task<By> wait_present(List<By> by, int TimeOut = 1000)
         {
             Stopwatch wt = new Stopwatch();
             wt.Start();
@@ -499,7 +482,7 @@ namespace PCKLIB
                     while (enumerator.MoveNext())
                     {
                         By current = enumerator.Current;
-                        if (IsElementPresent(current))
+                        if (is_element_present(current))
                             return current;
                     }
                 }
@@ -508,114 +491,9 @@ namespace PCKLIB
             return null;
         }
 
-        public async Task<bool> click_element(string xpath, int mode = 0, int timeout = 1000)
-        {
-            try
-            {
-                DateTime start = DateTime.Now;
-                if (mode == 2) // move mouse on pixel
-                {
-                    string x_pos = "", y_pos = "";
-                    int x = 0, y = 0;
-                    while (x == 0 || y == 0)
-                    {
-                        if (DateTime.Now.Subtract(start).TotalMilliseconds > timeout)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"#{m_ID}: Mouse click on {xpath} cancelled due to timeout.");
-                            return false;
-                        }
-                        try
-                        {
-                            string script_x =
-                                    "(function()" +
-                                        "{" +
-                                            "bodyRect = document.body.getBoundingClientRect();" +
-                                            "el = document.evaluate('" + xpath + "', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;" +
-                                            "el.style.setProperty('display', '');" +
-                                            "elemRect = el.getBoundingClientRect();" +
-                                            "return elemRect.left - bodyRect.left;" +
-                                    //"return elemRect.left;" +
-                                    "})()";
-                            x_pos = m_js.ExecuteScript(script_x).ToString();
-                            x = (int)float.Parse(x_pos);
-                            string script_y =
-                                    "(function()" +
-                                        "{" +
-                                            "bodyRect = document.body.getBoundingClientRect();" +
-                                            "el = document.evaluate('" + xpath + "', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;" +
-                                            "el.style.setProperty('display', '');" +
-                                            "elemRect = el.getBoundingClientRect();" +
-                                            "return elemRect.top - bodyRect.top;" +
-                                        //"return elemRect.top;" +
-                                        "})()";
-                            y_pos = m_js.ExecuteScript(script_y).ToString();
-                            y = (int)float.Parse(y_pos);
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"#{m_ID}: Error occured while trying mouse click on {xpath}. {ex.Message}");
-                            x = 0;
-                            y = 0;
-                        }
-                    }
-
-                    x += 1;
-                    y += 1;
-
-                    // Not implemented yet. Need further action.
-
-                    return true;
-                }
-                else if (mode == 1)
-                {
-                    if (await WaitToPresent(xpath) == false)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"#{m_ID}: Node not found. Mouse event(H+D+U) not sent to ({xpath})");
-                        return false;
-                    }
-                    string script = @"(function(x) {
-                    var el = document.evaluate('" + xpath + @"', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                    let hoverEvent = document.createEvent ('MouseEvents');
-                    hoverEvent.initEvent ('mouseover', true, true);
-                    el.dispatchEvent (hoverEvent);
-
-                    let downEvent = document.createEvent ('MouseEvents');
-                    downEvent.initEvent ('mousedown', true, true);
-                    el.dispatchEvent (downEvent);
-
-                    let upEvent = document.createEvent ('MouseEvents');
-                    upEvent.initEvent ('mouseup', true, true);
-                    el.dispatchEvent (upEvent);
-
-                    let clickEvent = document.createEvent ('MouseEvents');
-                    clickEvent.initEvent ('click', true, true);
-                    el.dispatchEvent (clickEvent);
-                    })();";
-
-                    m_js.ExecuteScript(script);
-                    Thread.Sleep(100);
-                    //System.Diagnostics.Debug.WriteLine($"#{m_ID}: Mouse event(H+D+U) sent to ({xpath})");
-                    return true;
-                }
-                else if (mode == 0)
-                {
-                    m_js.ExecuteScript($"document.evaluate('{xpath}', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue.click()");
-                    Thread.Sleep(100);
-                    //System.Diagnostics.Debug.WriteLine($"#{m_ID}: Javascript click function called {xpath}");
-                    return true;
-                }
-                return true;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"#{m_ID}: Click element failed. {xpath}. {ex.Message}");
-                return false;
-            }
-        }
-
         public IntPtr get_handle()
         {
-            string title = String.Format("{0} - Mozilla Firefox", Driver.Title);
+            string title = String.Format("{0} - Mozilla Firefox", browser.Title);
             var process = Process.GetProcesses()
                 .FirstOrDefault(x => x.MainWindowTitle == title);
             if (process != null)
@@ -624,13 +502,13 @@ namespace PCKLIB
             }
             return IntPtr.Zero;
         }
-        public async Task<bool> TryClick_All(string xpath)
+        public async Task<bool> click_element(string xpath)
         {
-            if (await TryClick(xpath, 0))
+            if (await click_element(xpath, 0))
                 return true;
-            if (await TryClick(xpath, 1))
+            if (await click_element(xpath, 1))
                 return true;
-            if (await TryClick(xpath, 2))
+            if (await click_element(xpath, 2))
                 return true;
             bool ret = false;
             try
@@ -647,12 +525,12 @@ namespace PCKLIB
                 System.Diagnostics.Debug.WriteLine($"{m_ID} : Clicking all ways failed. {xpath}");
             return ret;
         }
-        public async Task<bool> TryClick(string xpath, int mode = 0, int delay = 100)
+        public async Task<bool> click_element(string xpath, int mode = 0, int delay_time = 100)
         {
             try
             {
-                await TryClick(By.XPath(xpath), mode);
-                await TaskDelay(delay);
+                await click_element(By.XPath(xpath), mode);
+                await delay(delay_time);
                 return true;
             }
             catch (Exception ex)
@@ -661,7 +539,7 @@ namespace PCKLIB
                 return false;
             }
         }
-        public bool TriggerChange(string xpath)
+        public bool trigger_change(string xpath)
         {
             try
             {
@@ -673,7 +551,7 @@ namespace PCKLIB
                     }
                     else
                         arguments[0].fireEvent('onchange');";
-                Driver.ExecuteScript(js, ((RemoteWebDriver)Driver).FindElementByXPath(xpath));
+                browser.ExecuteScript(js, ((RemoteWebDriver)browser).FindElementByXPath(xpath));
                 return true;
             }
             catch(Exception )
@@ -681,23 +559,23 @@ namespace PCKLIB
                 return false;
             }
         }
-        public async Task<bool> TryClick(By by, int mode = 0)
+        public async Task<bool> click_element(By by, int mode = 0)
         {
             try
             {
                 if (mode == 0)
                 {
-                    Driver.ExecuteScript("arguments[0].click('');", ((RemoteWebDriver)Driver).FindElement(by));
+                    browser.ExecuteScript("arguments[0].click('');", ((RemoteWebDriver)browser).FindElement(by));
                 }
                 else if (mode == 1)
                 {
-                    Driver.FindElement(by).Click();
+                    browser.FindElement(by).Click();
                 }
                 else if (mode == 2)
                 {
-                    Actions action = new Actions(Driver);
-                    action.MoveToElement(Driver.FindElement(by)).Perform();
-                    action.Click(Driver.FindElement(by)).Perform();
+                    Actions action = new Actions(browser);
+                    action.MoveToElement(browser.FindElement(by)).Perform();
+                    action.Click(browser.FindElement(by)).Perform();
                 }
 
                 return true;
@@ -706,11 +584,11 @@ namespace PCKLIB
             return false;
         }
 
-        public async Task<bool> TryEnterText(string xpath, string textToEnter, string atributeToEdit = "value", int TimeOut = 10000, bool manualyEnter = false)
+        public async Task<bool> enter_text(string xpath, string textToEnter, string atributeToEdit = "value", int TimeOut = 10000, bool manualyEnter = false)
         {
-            return await TryEnterText(By.XPath(xpath), textToEnter, atributeToEdit, TimeOut, manualyEnter);
+            return await enter_text(By.XPath(xpath), textToEnter, atributeToEdit, TimeOut, manualyEnter);
         }
-        public async Task<bool> TryEnterText(By by, string textToEnter, string atributeToEdit = "value", int TimeOut = 10000, bool manualyEnter = false)
+        public async Task<bool> enter_text(By by, string textToEnter, string atributeToEdit = "value", int TimeOut = 10000, bool manualyEnter = false)
         {
             Stopwatch wt = new Stopwatch();
             wt.Start();
@@ -718,21 +596,21 @@ namespace PCKLIB
             {
                 try
                 {
-                    if (IsElementPresent(by) && await IsElementVisible(by))
+                    if (is_element_present(by) && await is_element_visible(by))
                     {
-                        Driver.FindElement(by).SendKeys((string)Keys.Control + "a");
+                        browser.FindElement(by).SendKeys((string)Keys.Control + "a");
                         if (manualyEnter)
-                            Driver.FindElement(by).SendKeys(textToEnter);
+                            browser.FindElement(by).SendKeys(textToEnter);
                         else
-                            Driver.ExecuteScript($"arguments[0].value = '{textToEnter}';", ((RemoteWebDriver)Driver).FindElement(by));
+                            browser.ExecuteScript($"arguments[0].value = '{textToEnter}';", ((RemoteWebDriver)browser).FindElement(by));
 
                         for (int index = 0; index < 11; ++index)
                         {
-                            if ((string)Driver.ExecuteScript("return arguments[0].value;", Driver.FindElement(by)) == textToEnter)
+                            if ((string)browser.ExecuteScript("return arguments[0].value;", browser.FindElement(by)) == textToEnter)
                             {
                                 return true;
                             }
-                            await TaskDelay(100);
+                            await delay(100);
                         }
                     }
                 }
@@ -781,7 +659,7 @@ namespace PCKLIB
         {
             try
             {
-                var elem = Driver.FindElementByXPath(xpath);
+                var elem = browser.FindElementByXPath(xpath);
                 if (elem == null)
                     return err;
                 return elem.GetAttribute(field);
@@ -792,30 +670,13 @@ namespace PCKLIB
             }
         }
 
-        public async Task<bool> WaitToVisable(string xpath, int TimeOut = 1000)
+        public async Task<bool> click_and_wait(string toClick, string toWait, int mode = 0, int TimeOut = 10000)
         {
-            return await WaitToVisable(By.XPath(xpath), TimeOut);
+            return await click_and_wait(By.XPath(toClick), By.XPath(toWait), mode, TimeOut);
         }
-        public async Task<bool> WaitToVisable(By by, int TimeOut = 1000)
+        public async Task<bool> click_and_wait(By toClick, By toWait, int mode = 0, int TimeOut = 10000)
         {
-            Stopwatch wt = new Stopwatch();
-            wt.Start();
-            while (wt.ElapsedMilliseconds < TimeOut)
-            {
-                if (await IsElementVisible(by))
-                    return true;
-                Thread.Sleep(100);
-            }
-            return false;
-        }
-
-        public async Task<bool> TryClickAndWait(string toClick, string toWait, int mode = 0, int TimeOut = 10000)
-        {
-            return await TryClickAndWait(By.XPath(toClick), By.XPath(toWait), mode, TimeOut);
-        }
-        public async Task<bool> TryClickAndWait(By toClick, By toWait, int mode = 0, int TimeOut = 10000)
-        {
-            if (!await WaitToPresent(toClick, 3000))
+            if (!await wait_present(toClick, 3000))
             {
                 System.Diagnostics.Debug.WriteLine($"#{m_ID} - Element to be clicked is not present! mode:{mode} By: {toClick}");
                 return false;
@@ -847,8 +708,8 @@ namespace PCKLIB
                             clickEvent.initEvent ('click', true, true);
                             el.dispatchEvent (clickEvent);
                             })();";
-                        Driver.ExecuteScript(script);
-                        if (!await WaitToPresent(toWait, TimeOut))
+                        browser.ExecuteScript(script);
+                        if (!await wait_present(toWait, TimeOut))
                         {
                             System.Diagnostics.Debug.WriteLine($"#{m_ID} - Click failed for waiting! mode:{mode} By: {toClick}");
                             return false;
@@ -858,8 +719,8 @@ namespace PCKLIB
                     }
                     else if (mode == 0)
                     {
-                        Driver.ExecuteScript("arguments[0].click('');", Driver.FindElement(toClick));
-                        if (!await WaitToPresent(toWait, TimeOut))
+                        browser.ExecuteScript("arguments[0].click('');", browser.FindElement(toClick));
+                        if (!await wait_present(toWait, TimeOut))
                         {
                             System.Diagnostics.Debug.WriteLine($"#{m_ID} - Click failed for waiting! mode:{mode} By: {toClick}");
                             return false;
@@ -870,8 +731,8 @@ namespace PCKLIB
                     }
                     else if (mode == 2)
                     {
-                        Driver.FindElement(toClick).Click();
-                        if (!await WaitToPresent(toWait, TimeOut))
+                        browser.FindElement(toClick).Click();
+                        if (!await wait_present(toWait, TimeOut))
                         {
                             System.Diagnostics.Debug.WriteLine($"#{m_ID} - Click failed for waiting! mode:{mode} By: {toClick}");
                             return false;
@@ -882,10 +743,10 @@ namespace PCKLIB
                     }
                     else if (mode == 3)
                     {
-                        Actions action = new Actions(Driver);
-                        action.MoveToElement(Driver.FindElement(toClick)).Perform();
-                        action.Click(Driver.FindElement(toClick)).Perform();
-                        if (!await WaitToPresent(toWait, TimeOut))
+                        Actions action = new Actions(browser);
+                        action.MoveToElement(browser.FindElement(toClick)).Perform();
+                        action.Click(browser.FindElement(toClick)).Perform();
+                        if (!await wait_present(toWait, TimeOut))
                         {
                             System.Diagnostics.Debug.WriteLine($"#{m_ID} - Click failed for waiting! mode:{mode} By: {toClick}");
                             return false;
@@ -903,7 +764,7 @@ namespace PCKLIB
             return false;
         }
 
-        public async Task<bool> IsElementVisible(By by, int timeout = 0)
+        public async Task<bool> is_element_visible(By by, int timeout = 0)
         {
             try
             {
@@ -911,9 +772,9 @@ namespace PCKLIB
                 wt.Start();
                 do
                 {
-                    if (IsElementVisible(Driver.FindElement(by)))
+                    if (is_element_visible(browser.FindElement(by)))
                         return true;
-                    await TaskDelay(100);
+                    await delay(100);
                 } while (wt.ElapsedMilliseconds < timeout);
                 return false;
             }
@@ -923,21 +784,21 @@ namespace PCKLIB
             }
         }
 
-        public bool IsElementVisible(IWebElement element)
+        public bool is_element_visible(IWebElement element)
         {
             return element.Displayed && element.Enabled;
         }
 
-        public void Quit()
+        public void quit()
         {
-            foreach (var hnd in Driver.WindowHandles)
+            foreach (var hnd in browser.WindowHandles)
             {
-                Driver.SwitchTo().Window(hnd);
-                Driver.Close();
+                browser.SwitchTo().Window(hnd);
+                browser.Close();
             }
-            Driver.Quit();
-            Driver.Dispose();
-            DeleteCurrentChromeData();
+            browser.Quit();
+            browser.Dispose();
+            delete_current_chrome_data();
 
 
         }
@@ -946,22 +807,15 @@ namespace PCKLIB
         {
         }
 
-        public void SaveScreenshot(string screenshotName)
+        public void save_screen_shot(string screenshotName)
         {
-            if (!m_screenshot)
-                return;
-            string path = $"screenshots/{m_ID}/screens/{Thread.CurrentThread.ManagedThreadId}_{m_creat_time}/";
+            string path = $"screenshots/{m_ID}/screens/{Thread.CurrentThread.ManagedThreadId}/";
             Directory.CreateDirectory(path);
-            Driver.GetScreenshot().SaveAsFile(path + screenshotName);
+            browser.GetScreenshot().SaveAsFile(path + screenshotName);
         }
 
-        public static void KillAllChromeDriverProcess()
-        {
-            System.Diagnostics.Debug.WriteLine("Killing all chrome drivers");
-            
-        }
 
-        public Process FindLatestChromeProcess()
+        public Process find_latest_chrome_process()
         {
             Process ret = null;
             foreach (Process process in new List<Process>((IEnumerable<Process>)Process.GetProcessesByName("chrome")))
@@ -973,7 +827,7 @@ namespace PCKLIB
             return ret;
         }
 
-        public void ClearChromeData()
+        public void clear_chrome_data()
         {
             try
             {
@@ -986,7 +840,7 @@ namespace PCKLIB
             }
         }
 
-        public static string GetRandomUserAgent()
+        public static string get_random_agent()
         {
             string[] strArray = new string[]
             {
@@ -1003,24 +857,15 @@ namespace PCKLIB
             return strArray[new Random().Next(0, strArray.Length)];
         }
 
-        public async Task TaskDelay(int delay)
+        public async Task delay(int delay)
         {
             await Task.Delay(delay);
         }
 
-        public async Task RandomWait()
+        public async Task delay_random()
         {
             int delay = (new Random()).Next(1000, 3000);
             await Task.Delay(delay);
-        }
-
-        public Size GetScreenSize()
-        {
-            Size[] sizeArray = new Size[]
-            {
-                new Size(800, 600),
-            };
-            return sizeArray[new Random().Next(0, sizeArray.Length)];
         }
 
         public void show_wait_window(string msg = "Wait please...")
@@ -1038,9 +883,9 @@ namespace PCKLIB
 
         public void close_last_window(string msg = "")
         {
-            Driver.SwitchTo().Window(Driver.WindowHandles.Last());
-            Driver.Close();
-            Driver.SwitchTo().Window(Driver.WindowHandles.First());
+            browser.SwitchTo().Window(browser.WindowHandles.Last());
+            browser.Close();
+            browser.SwitchTo().Window(browser.WindowHandles.First());
             if (msg != "")
             {
                 m_js.ExecuteScript($"alert({msg});");
@@ -1062,231 +907,6 @@ namespace PCKLIB
             ";
             var resp = m_js.ExecuteScript(js);
             return resp.ToString();
-        }
-    }
-
-    public class US_States
-    {
-        public static string StateABB2FULL(string state_abb)
-        {
-            switch (state_abb)
-            {
-                case "AK":
-                    return "Alaska";
-                case "AL":
-                    return "Alabama";
-                case "AR":
-                    return "Arkansas";
-                case "AZ":
-                    return "Arizona";
-                case "CA":
-                    return "California";
-                case "CO":
-                    return "Colorado";
-                case "CT":
-                    return "Connecticut";
-                case "DC":
-                    return "District of Columbia";
-                case "DE":
-                    return "Delaware";
-                case "FL":
-                    return "Florida";
-                case "GA":
-                    return "Georgia";
-                case "HI":
-                    return "Hawaii";
-                case "IA":
-                    return "Iowa";
-                case "ID":
-                    return "Idaho";
-                case "IL":
-                    return "Illinois";
-                case "IN":
-                    return "Indiana";
-                case "KS":
-                    return "Kansas";
-                case "KY":
-                    return "Kentucky";
-                case "LA":
-                    return "Louisiana";
-                case "MA":
-                    return "Massachusetts";
-                case "MD":
-                    return "Maryland";
-                case "ME":
-                    return "Maine";
-                case "MI":
-                    return "Michigan";
-                case "MN":
-                    return "Minnesota";
-                case "MO":
-                    return "Missouri";
-                case "MS":
-                    return "Mississippi";
-                case "MT":
-                    return "Montana";
-                case "NC":
-                    return "North Carolina";
-                case "ND":
-                    return "North Dakota";
-                case "NE":
-                    return "Nebraska";
-                case "NH":
-                    return "New Hampshire";
-                case "NJ":
-                    return "New Jersey";
-                case "NM":
-                    return "New Mexico";
-                case "NV":
-                    return "Nevada";
-                case "NY":
-                    return "New York";
-                case "OH":
-                    return "Ohio";
-                case "OK":
-                    return "Oklahoma";
-                case "OR":
-                    return "Oregon";
-                case "PA":
-                    return "Pennsylvania";
-                case "RI":
-                    return "Rhode Island";
-                case "SC":
-                    return "South Carolina";
-                case "SD":
-                    return "South Dakota";
-                case "TN":
-                    return "Tennessee";
-                case "TX":
-                    return "Texas";
-                case "UT":
-                    return "Utah";
-                case "VA":
-                    return "Virginia";
-                case "VT":
-                    return "Vermont";
-                case "WA":
-                    return "Washington";
-                case "WI":
-                    return "Wisconsin";
-                case "WV":
-                    return "West Virginia";
-                case "WY":
-                    return "Wyoming";
-                default:
-                    return state_abb;
-            }
-        }
-
-        public static string StateFULL2ABB(string state_full)
-        {
-            switch (state_full)
-            {
-                case "Alaska":
-                    return "AK";
-                case "Alabama":
-                    return "AL";
-                case "Arkansas":
-                    return "AR";
-                case "Arizona":
-                    return "AZ";
-                case "California":
-                    return "CA";
-                case "Colorado":
-                    return "CO";
-                case "Connecticut":
-                    return "CT";
-                case "DC":
-                    return "District of Columbia";
-                case "DE":
-                    return "Delaware";
-                case "Florida":
-                    return "FL";
-                case "Georgia":
-                    return "GA";
-                case "Hawaii":
-                    return "HI";
-                case "Iowa":
-                    return "IA";
-                case "Idaho":
-                    return "ID";
-                case "Illinois":
-                    return "IL";
-                case "Indiana":
-                    return "IN";
-                case "Kansas":
-                    return "KS";
-                case "Kentucky":
-                    return "KY";
-                case "Louisiana":
-                    return "LA";
-                case "Massachusetts":
-                    return "MA";
-                case "Maryland":
-                    return "MD";
-                case "Maine":
-                    return "ME";
-                case "Michigan":
-                    return "MI";
-                case "Minnesota":
-                    return "MN";
-                case "Missouri":
-                    return "MO";
-                case "Mississippi":
-                    return "MS";
-                case "Montana":
-                    return "MT";
-                case "North Carolina":
-                    return "NC";
-                case "North Dakota":
-                    return "ND";
-                case "Nebraska":
-                    return "NE";
-                case "New Hampshire":
-                    return "NH";
-                case "New Jersey":
-                    return "NJ";
-                case "New Mexico":
-                    return "NM";
-                case "Nevada":
-                    return "NV";
-                case "New York":
-                    return "NY";
-                case "Ohio":
-                    return "OH";
-                case "Oklahoma":
-                    return "OK";
-                case "Oregon":
-                    return "OR";
-                case "Pennsylvania":
-                    return "PA";
-                case "Rhode Island":
-                    return "RI";
-                case "South Carolina":
-                    return "SC";
-                case "South Dakota":
-                    return "SD";
-                case "Tennessee":
-                    return "TN";
-                case "Texas":
-                    return "TX";
-                case "Utah":
-                    return "UT";
-                case "Virginia":
-                    return "VA";
-                case "Vermont":
-                    return "VT";
-                case "Washington":
-                    return "WA";
-                case "Wisconsin":
-                    return "WI";
-                case "West Virginia":
-                    return "WV";
-                case "WY":
-                    return "Wyoming";
-                default:
-                    return state_full;
-            }
         }
     }
 }
