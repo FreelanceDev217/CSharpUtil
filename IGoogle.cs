@@ -32,7 +32,7 @@ namespace PCKLIB
     {
         public object m_locker = new object();
 
-        public int m_ID;    
+        public string m_ID;    
         public Guid m_guid;
 
         public object m_chr_data_dir = new object();
@@ -50,11 +50,13 @@ namespace PCKLIB
         public IEnumerable<int> PID = null;
 
         public string m_err_str = "##$$##$$";
-        public bool m_incognito = true;
+        public bool m_incognito = false;
         public bool m_dis_webrtc = false;
         public bool m_dis_cache = false;
         public bool m_dis_js = false;
-        public bool m_headless = false;
+        public bool m_headless = true;
+
+        public string m_dl_folder = "downloads";
         public void delete_current_chrome_data()
         {
             try
@@ -116,23 +118,25 @@ namespace PCKLIB
         {
             try
             {
-                lock (m_chr_data_dir)
-                {
-                    m_guid = Guid.NewGuid();
-                    m_chr_user_data_dir = $"\\ChromeData\\selenium_{Thread.CurrentThread.ManagedThreadId}" + m_guid.ToString();
-                    Directory.CreateDirectory(m_chr_user_data_dir);
-                }
+                //lock (m_chr_data_dir)
+                //{
+                //    m_guid = Guid.NewGuid();
+                //    m_chr_user_data_dir = $"\\ChromeData\\selenium_{Thread.CurrentThread.ManagedThreadId}" + m_guid.ToString();
+                //    Directory.CreateDirectory(m_chr_user_data_dir);
+                //}
 
                 System.Diagnostics.Debug.WriteLine($"#{m_ID} - Start...");
                 try
                 {
                     ChromeDriverService defaultService = ChromeDriverService.CreateDefaultService();
                     defaultService.HideCommandPromptWindow = true;
+
                     ChromeOptions chromeOptions = new ChromeOptions();
                     if (m_incognito)
                     {
                         chromeOptions.AddArguments("--incognito");
                     }
+
                     if (m_proxy != null)
                     {
                         var proxy = new Proxy();
@@ -145,29 +149,36 @@ namespace PCKLIB
                     }
 
                     if (m_headless)
+                    {
                         chromeOptions.AddArgument("--headless");
-                    chromeOptions.AddArgument("--start-maximized");
-                    //chromeOptions.AddArgument("--auth-server-whitelist");
-                    chromeOptions.AddArgument("--ignore-certificate-errors");
-                    chromeOptions.AddArgument("--ignore-ssl-errors");
-                    chromeOptions.AddArgument("--system-developer-mode");
-                    chromeOptions.AddArgument("--no-first-run");
-                    //chromeOptions.AddArguments("--disk-cache-size=0");
-                    chromeOptions.AddArgument("--load-extension=" + m_chr_extension_dir + "\\proxy helper");
-                    chromeOptions.AddArgument("--user-data-dir=" + m_chr_user_data_dir);
-                    if (m_dis_webrtc)
-                        chromeOptions.AddExtension(m_chr_extension_dir + "\\WebRTC Protect.crx");
-                    if (m_dis_cache)
-                        chromeOptions.AddExtension(m_chr_extension_dir + "\\CacheKiller.crx");
+                        chromeOptions.AddArgument("--disable-gpu");
+                        chromeOptions.AddArgument("--disable-extensions");
+                        chromeOptions.AddArgument("--window-size=1920,1080");
+                    }
 
-                    if (m_dis_js)
-                        chromeOptions.AddArgument("--load-extension=" + m_chr_extension_dir + "\\jsoff-master");
-                    string randomUserAgent = get_random_agent();
-                    chromeOptions.AddArgument(string.Format("--user-agent={0}", (object)randomUserAgent));
-                    chromeOptions.SetLoggingPreference(LogType.Driver, LogLevel.All);
-                    chromeOptions.AddAdditionalCapability("useAutomationExtension", false);
-                    chromeOptions.AddArguments("--no-sandbox");
-                    //chromeOptions.AddUserProfilePreference("profile.managed_default_content_settings.images", 2);
+                    chromeOptions.AddArguments("no-sandbox");
+                    chromeOptions.AddArgument("--start-maximized");
+
+                    //chromeOptions.AddArguments("--disk-cache-size=0");
+                    //chromeOptions.AddArgument("--load-extension=" + m_chr_extension_dir + "\\proxy helper");
+                    //chromeOptions.AddArgument("--user-data-dir=" + m_chr_user_data_dir);
+
+                    m_dl_folder = Directory.GetCurrentDirectory() + "\\downloads";
+                    if (Directory.Exists(m_dl_folder) == false)
+                    {
+                        Directory.CreateDirectory(m_dl_folder);
+                    }
+                    chromeOptions.AddUserProfilePreference("download.default_directory", m_dl_folder);
+                    chromeOptions.AddUserProfilePreference("download.prompt_for_download", "false");
+                    chromeOptions.AddUserProfilePreference("disable-popup-blocking", "true");
+
+                    //chromeOptions.AddArgument("--disable-features=RendererCodeIntegrity");
+
+                    //string randomUserAgent = get_random_agent();
+                    //chromeOptions.AddArgument(string.Format("--user-agent={0}", (object)randomUserAgent));
+
+                    //chromeOptions.SetLoggingPreference(LogType.Driver, LogLevel.All);
+
 
                     string chr_path = "";
 
@@ -200,7 +211,7 @@ namespace PCKLIB
 
                     try
                     {
-                        browser = new ChromeDriver(defaultService, chromeOptions);
+                        browser = new ChromeDriver(defaultService, chromeOptions, TimeSpan.FromSeconds(130));
                     }
                     catch (Exception ex)
                     {
@@ -284,36 +295,22 @@ namespace PCKLIB
             }
             return false;
         }
-        public async Task<bool> wait_url_change(string url, int timeout = 7000)
+        public async Task<bool> wait_url_change(string url, double timeout = 7)
         {
             try
             {
                 Stopwatch wt = new Stopwatch();
                 wt.Start();
-                while (wt.ElapsedMilliseconds < timeout)
+                while (wt.ElapsedMilliseconds < timeout * 1000)
                 {
                     if (browser.Url != url)
                         return true;
-                    await delay(100);
+                    await delay(0.1);
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"#{m_ID} - Failed to wait for url change. Exception:{ex.Message}");
-            }
-            return false;
-        }
-
-        public async Task<bool> try_select(By list, By optionToVerify, string textToSelect, int timeout = 5000)
-        {
-            Stopwatch wt = new Stopwatch();
-            wt.Start();
-            while (wt.ElapsedMilliseconds < timeout)
-            {
-                if (browser.FindElement(optionToVerify).Text == textToSelect)
-                    return true;
-                browser.FindElement(list).SendKeys(textToSelect[0].ToString());
-                await delay(100);
             }
             return false;
         }
@@ -345,15 +342,15 @@ namespace PCKLIB
             }
         }
 
-        public async Task<bool> wait_visible(string xpath, int TimeOut = 1000)
+        public async Task<bool> wait_visible(string xpath, double timeout = 1)
         {
-            return await wait_visible(By.XPath(xpath), TimeOut);
+            return await wait_visible(By.XPath(xpath), timeout);
         }
-        public async Task<bool> wait_visible(By by, int TimeOut = 1000)
+        public async Task<bool> wait_visible(By by, double timeout = 1)
         {
             Stopwatch wt = new Stopwatch();
             wt.Start();
-            while (wt.ElapsedMilliseconds < TimeOut)
+            while (wt.ElapsedMilliseconds < timeout * 1000)
             {
                 if (await is_element_visible(by))
                     return true;
@@ -362,15 +359,15 @@ namespace PCKLIB
             return false;
         }
 
-        public async Task<bool> wait_unvisible(string xpath, int TimeOut = 1000)
+        public async Task<bool> wait_unvisible(string xpath, double timeout = 1)
         {
-            return await wait_unvisible(By.XPath(xpath), TimeOut);
+            return await wait_unvisible(By.XPath(xpath), timeout);
         }
-        public async Task<bool> wait_unvisible(By by, int TimeOut = 1000)
+        public async Task<bool> wait_unvisible(By by, double timeout = 1)
         {
             Stopwatch wt = new Stopwatch();
             wt.Start();
-            while (wt.ElapsedMilliseconds < TimeOut)
+            while (wt.ElapsedMilliseconds < timeout * 1000)
             {
                 try
                 {
@@ -381,7 +378,7 @@ namespace PCKLIB
                 {
                     return false;
                 }
-                await delay(100);
+                await delay(0.1);
             }
             return false;
         }
@@ -399,7 +396,7 @@ namespace PCKLIB
             IWebElement input = (IWebElement)jse.ExecuteScript(JS_DROP_FILE, target, offsetX, offsetY);
             input.SendKeys(filePath);
         }
-        public async Task<bool> node_present(string xpath, int timeout = 5000)
+        public async Task<bool> node_present(string xpath, double timeout = 5)
         {
             try
             {
@@ -411,12 +408,12 @@ namespace PCKLIB
                                         "if (node==null) return null;" +
                                         "return node.id;" +
                                 "})()";
-                while (time < timeout)
+                while (time < timeout * 1000)
                 {
                     node = m_js.ExecuteScript(script);
                     if (node != null)
                     {
-                        await delay(1000);
+                        await delay(1);
                         return true;
                     }
                     int part = (new Random()).Next(1, 3) * 100;
@@ -430,25 +427,32 @@ namespace PCKLIB
                 return false;
             }
         }
-        public async Task<bool> wait_present(string xpath, int TimeOut = 800)
+        public async Task<bool> wait_present(string xpath, double timeout = 0.8)
         {
-            return await wait_present(By.XPath(xpath), TimeOut);
+            return await wait_present(By.XPath(xpath), timeout);
         }
-        public async Task<bool> wait_present(By by, int TimeOut = 5000)
+        public async Task<bool> wait_present(By by, double timeout = 5)
         {
-            Stopwatch wt = new Stopwatch();
-            wt.Start();
-            do
+            try
             {
-                if (is_element_present(by))
-                    return true;
-                await Task.Delay(100);
+                Stopwatch wt = new Stopwatch();
+                wt.Start();
+                do
+                {
+                    if (is_element_present(by))
+                        return true;
+                    await Task.Delay(100);
+                }
+                while (wt.ElapsedMilliseconds < timeout * 1000);
+                return false;
             }
-            while (wt.ElapsedMilliseconds < TimeOut);
-            return false;
+            catch(Exception ex)
+            {
+                return false;
+            }
         }
 
-        public async Task<bool> wait_attr_change(string xpath, string attribute, string rex, int TimeOut = 5000)
+        public async Task<bool> wait_attr_change(string xpath, string attribute, string rex, double timeout = 5)
         {
             try
             {
@@ -457,11 +461,16 @@ namespace PCKLIB
                 do
                 {
                     string val = browser.FindElementByXPath(xpath).GetAttribute(attribute);
-                    if (Regex.IsMatch(val, rex))
+                    if (rex == "")
+                    {
+                        if (val == "" || val == null)
+                            return true;
+                    }
+                    else if (Regex.IsMatch(val, rex))
                         return true;
                     await Task.Delay(100);
                 }
-                while (wt.ElapsedMilliseconds < TimeOut);
+                while (wt.ElapsedMilliseconds < timeout * 1000);
                 return false;
             }
             catch (Exception ex)
@@ -471,11 +480,11 @@ namespace PCKLIB
             return false;
         }
 
-        public async Task<By> wait_present(List<By> by, int TimeOut = 1000)
+        public async Task<By> wait_present(List<By> by, double timeout = 1)
         {
             Stopwatch wt = new Stopwatch();
             wt.Start();
-            while (wt.ElapsedMilliseconds < TimeOut)
+            while (wt.ElapsedMilliseconds < timeout * 1000)
             {
                 using (List<By>.Enumerator enumerator = by.GetEnumerator())
                 {
@@ -525,7 +534,7 @@ namespace PCKLIB
                 System.Diagnostics.Debug.WriteLine($"{m_ID} : Clicking all ways failed. {xpath}");
             return ret;
         }
-        public async Task<bool> click_element(string xpath, int mode = 0, int delay_time = 100)
+        public async Task<bool> click_element(string xpath, int mode = 0, double delay_time = 0.1)
         {
             try
             {
@@ -584,42 +593,30 @@ namespace PCKLIB
             return false;
         }
 
-        public async Task<bool> enter_text(string xpath, string textToEnter, string atributeToEdit = "value", int TimeOut = 10000, bool manualyEnter = false)
+        public async Task<bool> enter_text(string xpath, string textToEnter, bool manualyEnter = false, string atributeToEdit = "value")
         {
-            return await enter_text(By.XPath(xpath), textToEnter, atributeToEdit, TimeOut, manualyEnter);
+            return await enter_text(By.XPath(xpath), textToEnter, manualyEnter, atributeToEdit);
         }
-        public async Task<bool> enter_text(By by, string textToEnter, string atributeToEdit = "value", int TimeOut = 10000, bool manualyEnter = false)
+        public async Task<bool> enter_text(By by, string textToEnter, bool manualyEnter = false, string atributeToEdit = "value")
         {
             Stopwatch wt = new Stopwatch();
             wt.Start();
-            while (wt.ElapsedMilliseconds < TimeOut)
+            try
             {
-                try
+                if (is_element_present(by) && await is_element_visible(by))
                 {
-                    if (is_element_present(by) && await is_element_visible(by))
-                    {
-                        browser.FindElement(by).SendKeys((string)Keys.Control + "a");
-                        if (manualyEnter)
-                            browser.FindElement(by).SendKeys(textToEnter);
-                        else
-                            browser.ExecuteScript($"arguments[0].value = '{textToEnter}';", ((RemoteWebDriver)browser).FindElement(by));
-
-                        for (int index = 0; index < 11; ++index)
-                        {
-                            if ((string)browser.ExecuteScript("return arguments[0].value;", browser.FindElement(by)) == textToEnter)
-                            {
-                                return true;
-                            }
-                            await delay(100);
-                        }
-                    }
+                    browser.FindElement(by).SendKeys((string)Keys.Control + "a");
+                    if (manualyEnter)
+                        browser.FindElement(by).SendKeys(textToEnter);
+                    else
+                        browser.ExecuteScript($"arguments[0].value = '{textToEnter}';", ((RemoteWebDriver)browser).FindElement(by));
+                    return true;
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"#{m_ID} - Failed to enter text. Exception:{ex.Message}");
-                    return false;
-                }
-                await Task.Delay(100);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"#{m_ID} - Failed to enter text. Exception:{ex.Message}");
+                return false;
             }
             return false;
         }
@@ -670,101 +667,7 @@ namespace PCKLIB
             }
         }
 
-        public async Task<bool> click_and_wait(string toClick, string toWait, int mode = 0, int TimeOut = 10000)
-        {
-            return await click_and_wait(By.XPath(toClick), By.XPath(toWait), mode, TimeOut);
-        }
-        public async Task<bool> click_and_wait(By toClick, By toWait, int mode = 0, int TimeOut = 10000)
-        {
-            if (!await wait_present(toClick, 3000))
-            {
-                System.Diagnostics.Debug.WriteLine($"#{m_ID} - Element to be clicked is not present! mode:{mode} By: {toClick}");
-                return false;
-            }
-
-            Stopwatch wt = new Stopwatch();
-            wt.Start();
-            while (wt.ElapsedMilliseconds < TimeOut)
-            {
-                try
-                {
-                    if (mode == 1)
-                    {
-                        string script = @"(function(x) {
-                            var el = document.evaluate('" + toClick + @"', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                            let hoverEvent = document.createEvent ('MouseEvents');
-                            hoverEvent.initEvent ('mouseover', true, true);
-                            el.dispatchEvent (hoverEvent);
-
-                            let downEvent = document.createEvent ('MouseEvents');
-                            downEvent.initEvent ('mousedown', true, true);
-                            el.dispatchEvent (downEvent);
-
-                            let upEvent = document.createEvent ('MouseEvents');
-                            upEvent.initEvent ('mouseup', true, true);
-                            el.dispatchEvent (upEvent);
-
-                            let clickEvent = document.createEvent ('MouseEvents');
-                            clickEvent.initEvent ('click', true, true);
-                            el.dispatchEvent (clickEvent);
-                            })();";
-                        browser.ExecuteScript(script);
-                        if (!await wait_present(toWait, TimeOut))
-                        {
-                            System.Diagnostics.Debug.WriteLine($"#{m_ID} - Click failed for waiting! mode:{mode} By: {toClick}");
-                            return false;
-                        }
-                        System.Diagnostics.Debug.WriteLine($"#{m_ID} - Click success! mode:{mode} By: {toClick}");
-                        return true;
-                    }
-                    else if (mode == 0)
-                    {
-                        browser.ExecuteScript("arguments[0].click('');", browser.FindElement(toClick));
-                        if (!await wait_present(toWait, TimeOut))
-                        {
-                            System.Diagnostics.Debug.WriteLine($"#{m_ID} - Click failed for waiting! mode:{mode} By: {toClick}");
-                            return false;
-                        }
-
-                        System.Diagnostics.Debug.WriteLine($"#{m_ID} - Click success! mode:{mode} By: {toClick}");
-                        return true;
-                    }
-                    else if (mode == 2)
-                    {
-                        browser.FindElement(toClick).Click();
-                        if (!await wait_present(toWait, TimeOut))
-                        {
-                            System.Diagnostics.Debug.WriteLine($"#{m_ID} - Click failed for waiting! mode:{mode} By: {toClick}");
-                            return false;
-                        }
-
-                        System.Diagnostics.Debug.WriteLine($"#{m_ID} - Click success! mode:{mode} By: {toClick}");
-                        return true;
-                    }
-                    else if (mode == 3)
-                    {
-                        Actions action = new Actions(browser);
-                        action.MoveToElement(browser.FindElement(toClick)).Perform();
-                        action.Click(browser.FindElement(toClick)).Perform();
-                        if (!await wait_present(toWait, TimeOut))
-                        {
-                            System.Diagnostics.Debug.WriteLine($"#{m_ID} - Click failed for waiting! mode:{mode} By: {toClick}");
-                            return false;
-                        }
-                        System.Diagnostics.Debug.WriteLine($"#{m_ID} - Click success! mode:{mode} By: {toClick}");
-                        return true;
-                    }
-                }
-                catch
-                {
-
-                }
-            }
-            System.Diagnostics.Debug.WriteLine($"#{m_ID} - Click failed for waiting! mode:{mode} By: {toClick}");
-            return false;
-        }
-
-        public async Task<bool> is_element_visible(By by, int timeout = 0)
+        public async Task<bool> is_element_visible(By by, double timeout = 0)
         {
             try
             {
@@ -774,8 +677,8 @@ namespace PCKLIB
                 {
                     if (is_element_visible(browser.FindElement(by)))
                         return true;
-                    await delay(100);
-                } while (wt.ElapsedMilliseconds < timeout);
+                    await delay(0.1);
+                } while (wt.ElapsedMilliseconds < timeout * 1000);
                 return false;
             }
             catch (Exception)
@@ -791,16 +694,10 @@ namespace PCKLIB
 
         public void quit()
         {
-            foreach (var hnd in browser.WindowHandles)
+            if(browser != null)
             {
-                browser.SwitchTo().Window(hnd);
-                browser.Close();
+                browser.Quit();
             }
-            browser.Quit();
-            browser.Dispose();
-            delete_current_chrome_data();
-
-
         }
 
         public IGoogle()
@@ -857,9 +754,9 @@ namespace PCKLIB
             return strArray[new Random().Next(0, strArray.Length)];
         }
 
-        public async Task delay(int delay)
+        public async Task delay(double delay)
         {
-            await Task.Delay(delay);
+            await Task.Delay((int)(delay*1000));
         }
 
         public async Task delay_random()
@@ -891,8 +788,35 @@ namespace PCKLIB
                 m_js.ExecuteScript($"alert({msg});");
             }
         }
+        void check_new_tab()
+        {
+            try
+            {
+                var cur = browser.CurrentWindowHandle;
+                foreach (var hnd in browser.WindowHandles)
+                {
+                    browser.SwitchTo().Window(hnd);
+                    if (browser.Url.Contains("newtab"))
+                    {
+                        browser.Close();
+                    }
+                }
+                browser.SwitchTo().Window(cur);
+            }
+            catch (Exception ex)
+            { }
+        }
 
-        public async Task<string> get_base64_img(string xpath)
+        public void EnableDownloadInHeadlessChrome(string downloadDir)
+        {
+            ChromeDriver driver = this.browser;
+            var param = new Dictionary<string, object>();
+            param["behavior"] = "allow";
+            param["downloadPath"] = downloadDir;
+            driver.ExecuteChromeCommand("Page.setDownloadBehavior", param);
+        }
+
+    public async Task<string> get_base64_img(string xpath)
         {
             string js = @"
                     xpath=" + $"\"{xpath}\"" + @";
